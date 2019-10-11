@@ -1,0 +1,63 @@
+FROM daocloud.io/php:7.0.32-fpm
+MAINTAINER yuhari
+
+# 修改镜像源
+RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+RUN sed -i 's/security.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+
+RUN echo 'Acquire::http::Proxy "http://docker.for.mac.localhost:7890";' > /etc/apt/apt.conf
+
+RUN apt-get update && apt-get install -y $PHPIZE_DEPS \
+		libpng-dev libjpeg-dev libicu-dev libmcrypt-dev libxml2-dev libxslt-dev \
+		libmagickwand-dev libmemcached-dev \
+		libcurl4-openssl-dev libc-client-dev libkrb5-dev 
+		
+RUN /usr/local/bin/docker-php-ext-install bcmath calendar \
+		exif gd intl mcrypt mysqli pdo_mysql pcntl shmop  \
+		sockets sysvmsg sysvsem sysvshm wddx xsl gettext
+
+RUN /usr/local/bin/docker-php-ext-configure imap --with-kerberos --with-imap-ssl && /usr/local/bin/docker-php-ext-install imap
+
+RUN pecl install msgpack
+RUN echo "extension=msgpack.so" > /usr/local/etc/php/conf.d/docker-php-ext-msgpack.ini
+
+RUN pecl install igbinary
+RUN echo "extension=igbinary.so" > /usr/local/etc/php/conf.d/docker-php-ext-igbinary.ini
+
+RUN printf "\n" | pecl install imagick
+RUN echo "extension=imagick.so" > /usr/local/etc/php/conf.d/docker-php-ext-imagick.ini
+
+RUN printf "yes\n\n\nyes\nyes\nyes\n\n\n\n" | pecl install memcached
+RUN echo "extension=memcached.so" > /usr/local/etc/php/conf.d/docker-php-ext-memcached.ini
+
+RUN printf "yes\n\n" | pecl install redis
+RUN echo "extension=redis.so" > /usr/local/etc/php/conf.d/docker-php-ext-redis.ini
+
+RUN printf "yes\n" | pecl install yar
+RUN echo "extension=yar.so" > /usr/local/etc/php/conf.d/docker-php-ext-yar.ini
+
+RUN cd /root
+
+COPY ./coreseek-3.2.14.tar.gz /root
+RUN tar zxvf /root/coreseek-3.2.14.tar.gz
+RUN cd coreseek-3.2.14/csft-3.2.14/api/libsphinxclient && ./configure --with-prefix=/usr/local/lib/sphinxclient && make && make install
+
+RUN cd /root
+
+RUN curl 'http://git.php.net/?p=pecl/search_engine/sphinx.git;a=snapshot;h=d958afb6c587f08eee37602dbd8518afdcd72916;sf=tgz' --output /root/sphinx.tar.gz
+RUN tar zxvf /root/sphinx.tar.gz
+RUN cd sphinx-d958afb && phpize && ./configure && make && make install
+RUN echo "extension=sphinx.so" > /usr/local/etc/php/conf.d/docker-php-ext-sphinx.ini
+
+RUN cd /root && rm -rf coreseek* && rm -rf sphinx*
+RUN cd /var/www/html && rm -rf coreseek* && rm -rf sphinx*
+
+RUN mkdir /var/log/fpm
+
+RUN apt-get purge && apt-get autoremove
+
+EXPOSE 9000
+
+VOLUME ["/usr/local/etc/php-fpm.d", "/var/log/fpm", "/var/www/html"]
+
+ENTRYPOINT ["docker-php-entrypoint", "php-fpm"]

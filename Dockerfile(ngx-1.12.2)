@@ -1,0 +1,85 @@
+FROM debian:9.11-slim
+MAINTAINER yuhari
+
+WORKDIR /var/local
+# 修改镜像源
+RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+RUN sed -i 's/security.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+
+RUN echo 'Acquire::http::Proxy "http://docker.for.mac.localhost:7890";' > /etc/apt/apt.conf
+
+RUN apt-get update && apt-get install -y wget make gcc libssl1.0-dev \
+							libpcre3-dev zlib1g-dev libxml2-dev libxslt-dev \
+							libgd-dev libgeoip-dev
+
+RUN wget 'http://nginx.org/download/nginx-1.12.2.tar.gz' && tar zxvf nginx-1.12.2.tar.gz && mv nginx-1.12.2 nginx && rm nginx-1.12.2.tar.gz
+
+RUN wget 'https://github.com/openresty/lua-nginx-module/archive/v0.10.15.tar.gz' && tar zxvf v0.10.15.tar.gz && mv lua-nginx-module-0.10.15 ngx-module-lua && rm v0.10.15.tar.gz
+
+RUN wget 'https://codeload.github.com/gnosek/nginx-upstream-fair/legacy.tar.gz/master' && tar zxvf master && mv gnosek-nginx-upstream-fair-a18b409 ngx-module-upstream-fair && rm master
+
+RUN wget 'https://github.com/simplresty/ngx_devel_kit/archive/v0.3.1.tar.gz' && tar zxvf v0.3.1.tar.gz && mv ngx_devel_kit-0.3.1 ngx-module-devel-kit && rm v0.3.1.tar.gz
+
+RUN wget 'https://github.com/LuaJIT/LuaJIT/archive/v2.0.5.tar.gz' && tar zxvf v2.0.5.tar.gz && mv LuaJIT-2.0.5 luajit && rm v2.0.5.tar.gz
+
+RUN cd luajit && sed -i 's#/usr/local#/usr/local/luajit#' Makefile && make && make install
+
+RUN echo 'export LUAJIT_LIB=/usr/local/luajit/lib' >> /etc/profile
+RUN echo 'export LUAJIT_INC=/usr/local/luajit/include/luajit-2.0' >> /etc/profile
+RUN echo 'export PATH=/usr/local/luajit/bin:$PATH' >> /etc/profile
+
+RUN export LUAJIT_LIB=/usr/local/luajit/lib && export LUAJIT_INC=/usr/local/luajit/include/luajit-2.0 && export PATH=/usr/local/luajit/bin:$PATH \
+	&& cd nginx && ./configure --prefix=/etc/nginx --conf-path=/etc/nginx/nginx.conf \
+	--error-log-path=/var/log/nginx/error.log  --http-log-path=/var/log/nginx/access.log  \
+	--pid-path=/var/run/nginx.pid --with-debug --with-http_addition_module \
+	--with-http_dav_module --with-http_geoip_module --with-http_gzip_static_module --with-http_image_filter_module \
+	--with-http_realip_module --with-http_stub_status_module --with-http_ssl_module --with-http_sub_module --with-http_xslt_module \
+    --with-mail \
+	--with-mail_ssl_module --with-pcre-jit --with-http_auth_request_module --with-http_gunzip_module --with-http_v2_module --with-stream --with-stream_ssl_module --with-threads \
+	--with-ld-opt=-Wl,-rpath,/usr/local/luajit/lib --add-module=/var/local/ngx-module-lua --add-module=/var/local/ngx-module-devel-kit --add-module=/var/local/ngx-module-upstream-fair  \
+	&& sed -i 's/default_port/no_port/g' /var/local/ngx-module-upstream-fair/ngx_http_upstream_fair_module.c \
+	&& make && make install
+	
+RUN ln -s /etc/nginx/sbin/nginx /usr/sbin/nginx
+
+RUN mkdir /etc/nginx/sites-enabled && mkdir /etc/nginx/conf && mkdir /var/www
+
+RUN export LUAJIT_LIB=/usr/local/luajit/lib && export LUAJIT_INC=/usr/local/luajit/include/luajit-2.0 && export PATH=/usr/local/luajit/bin:$PATH \
+	&& wget 'https://github.com/openresty/lua-resty-core/archive/v0.1.16.tar.gz' && tar zxvf v0.1.16.tar.gz && mv lua-resty-core-0.1.16 resty-core && rm v0.1.16.tar.gz \
+	&& cd resty-core && sed -i 's#/usr/local#/usr/local/luajit#g' Makefile && make install
+
+RUN export LUAJIT_LIB=/usr/local/luajit/lib && export LUAJIT_INC=/usr/local/luajit/include/luajit-2.0 && export PATH=/usr/local/luajit/bin:$PATH \
+	&& wget 'https://github.com/openresty/lua-resty-redis/archive/v0.24.tar.gz' && tar zxvf v0.24.tar.gz && mv lua-resty-redis-0.24 resty-redis && rm v0.24.tar.gz \
+	&& cd resty-redis && sed -i 's#/usr/local#/usr/local/luajit#g' Makefile && make install
+
+RUN export LUAJIT_LIB=/usr/local/luajit/lib && export LUAJIT_INC=/usr/local/luajit/include/luajit-2.0 && export PATH=/usr/local/luajit/bin:$PATH \
+	&& wget 'https://github.com/ledgetech/lua-resty-http/archive/v0.14.tar.gz' && tar zxvf v0.14.tar.gz && mv lua-resty-http-0.14 resty-http && rm v0.14.tar.gz \
+	&& cd resty-http && sed -i 's#/usr/local#/usr/local/luajit#g' Makefile && make install
+	
+RUN export LUAJIT_LIB=/usr/local/luajit/lib && export LUAJIT_INC=/usr/local/luajit/include/luajit-2.0 && export PATH=/usr/local/luajit/bin:$PATH \
+	&& wget 'https://github.com/openresty/lua-resty-memcached/archive/v0.14.tar.gz' && tar zxvf v0.14.tar.gz && mv lua-resty-memcached-0.14 resty-memcached && rm v0.14.tar.gz \
+	&& cd resty-memcached && sed -i 's#/usr/local#/usr/local/luajit#g' Makefile && make install
+	
+RUN export LUAJIT_LIB=/usr/local/luajit/lib && export LUAJIT_INC=/usr/local/luajit/include/luajit-2.0 && export PATH=/usr/local/luajit/bin:$PATH \
+	&& wget 'https://github.com/openresty/lua-resty-string/archive/v0.12rc1.tar.gz' && tar zxvf v0.12rc1.tar.gz && mv lua-resty-string-0.12rc1 resty-string && rm v0.12rc1.tar.gz \
+	&& cd resty-string && sed -i 's#/usr/local#/usr/local/luajit#g' Makefile && make install
+
+RUN export LUAJIT_LIB=/usr/local/luajit/lib && export LUAJIT_INC=/usr/local/luajit/include/luajit-2.0 && export PATH=/usr/local/luajit/bin:$PATH \
+	&& wget 'https://github.com/mpx/lua-cjson/archive/2.1.0.tar.gz' && tar zxvf 2.1.0.tar.gz && mv lua-cjson-2.1.0 lua-cjson && rm 2.1.0.tar.gz \
+	&& cd lua-cjson && sed -i 's#/usr/local#/usr/local/luajit#g' Makefile && sed -i 's#/include#/include/luajit-2.0#g' Makefile && make install
+
+RUN rm -rf nginx && rm -rf lua* && rm -rf ngx-* && rm -rf resty-*
+
+RUN apt-get purge && apt-get autoremove
+
+COPY ./nginx-service /etc/init.d/nginx
+
+RUN rm /etc/nginx/nginx.conf
+
+COPY ./nginx-start.sh /var/local/nginx-start.sh
+
+EXPOSE 80
+
+VOLUME ["/var/log/nginx", "/etc/nginx/sites-enabled", "/etc/nginx/conf", "/var/www", "/etc/nginx/nginx.conf"]
+
+ENTRYPOINT ["/var/local/nginx-start.sh"]
